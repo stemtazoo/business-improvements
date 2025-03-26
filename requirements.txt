@@ -1,0 +1,14 @@
+# excel-sheet-splitting
+# GUI フレームワーク
+flet==0.27.6
+
+# Excel ファイル操作用
+openpyxl==3.1.5
+
+# 設定ファイル（YAML）読み込み
+PyYAML==6.0.2
+
+# テスト用
+pytest==8.3.4
+
+# add app
