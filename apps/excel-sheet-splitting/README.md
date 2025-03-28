@@ -25,7 +25,7 @@ pip install -r requirements.txt
 ### 2. アプリを起動
 
 ```bash
-python src/main.py
+flet run src/main.py
 ```
 
 Flet により、ブラウザで GUI が起動します。
