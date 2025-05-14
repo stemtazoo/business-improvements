@@ -1,0 +1,30 @@
+[
+    {
+      "name": "backups",
+      "watch_dir": "backups",
+      "state_file": "state/backups_state.json",
+      "notification": {
+        "type": "run",
+        "command": ["scripts/process_backup.bat"]
+      }
+    },
+    {
+      "name": "logs",
+      "watch_dir": "logs",
+      "state_file": "state/logs_state.json",
+      "notification": {
+        "type": "run",
+        "command": ["scripts/process_logs.bat"]
+      }
+    },
+    {
+      "name": "reports",
+      "watch_dir": "reports",
+      "state_file": "state/reports_state.json",
+      "notification": {
+        "type": "run",
+        "command": ["python", "scripts/process_reports.py"]
+      }
+    }
+  ]
+  
