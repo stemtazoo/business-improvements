@@ -29,7 +29,8 @@ def extract_units_from_ixbrl(
         warnings.append(f"[unit] XML parse failed: {ixbrl_inner_path}: {e}")
         return []
 
-    ns = dict(root.nsmap or {})
+    # ✅ drop None key
+    ns = {k: v for k, v in (root.nsmap or {}).items() if k}
     ns.setdefault("xbrli", XBRLI_NS)
 
     out: list[Unit] = []
@@ -38,14 +39,9 @@ def extract_units_from_ixbrl(
         if not uid:
             continue
 
-        # measure can appear multiple times; also there can be divide structures.
         measures = [((m.text or "").strip()) for m in u.xpath(".//xbrli:measure", namespaces=ns)]
         measures = [m for m in measures if m]
 
-        # Keep as JSON list for now (simple & sufficient)
         out.append(Unit(unit_ref=uid, measures_json=json.dumps(measures, ensure_ascii=False)))
-
-    if not out:
-        warnings.append(f"[unit] No units extracted from: {ixbrl_inner_path}")
 
     return out

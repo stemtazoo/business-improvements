@@ -30,7 +30,8 @@ def extract_contexts_from_ixbrl(
         warnings.append(f"[context] XML parse failed: {ixbrl_inner_path}: {e}")
         return []
 
-    ns = dict(root.nsmap or {})
+    # ✅ drop None key
+    ns = {k: v for k, v in (root.nsmap or {}).items() if k}
     ns.setdefault("xbrli", XBRLI_NS)
     ns.setdefault("xbrldi", XBRLDI_NS)
 
@@ -42,29 +43,27 @@ def extract_contexts_from_ixbrl(
 
         entity_scheme = None
         entity_identifier = None
-        ident = ctx.find(".//{http://www.xbrl.org/2003/instance}entity/{http://www.xbrl.org/2003/instance}identifier")
+        ident = ctx.find(f".//{{{XBRLI_NS}}}entity/{{{XBRLI_NS}}}identifier")
         if ident is not None:
             entity_scheme = (ident.get("scheme") or "").strip() or None
             entity_identifier = (ident.text or "").strip() or None
 
-        # period
-        period = ctx.find(".//{http://www.xbrl.org/2003/instance}period")
+        period = ctx.find(f".//{{{XBRLI_NS}}}period")
         period_type = "unknown"
         instant_date = start_date = end_date = None
         if period is not None:
-            inst = period.find("{http://www.xbrl.org/2003/instance}instant")
+            inst = period.find(f"{{{XBRLI_NS}}}instant")
             if inst is not None and (inst.text or "").strip():
                 period_type = "instant"
                 instant_date = (inst.text or "").strip()
             else:
-                st = period.find("{http://www.xbrl.org/2003/instance}startDate")
-                ed = period.find("{http://www.xbrl.org/2003/instance}endDate")
+                st = period.find(f"{{{XBRLI_NS}}}startDate")
+                ed = period.find(f"{{{XBRLI_NS}}}endDate")
                 if st is not None and ed is not None:
                     period_type = "duration"
                     start_date = (st.text or "").strip() or None
                     end_date = (ed.text or "").strip() or None
 
-        # dimensions (explicitMember / typedMember)
         dims = []
         for mem in ctx.xpath(".//xbrldi:explicitMember", namespaces=ns):
             dim = (mem.get("dimension") or "").strip()
@@ -74,7 +73,6 @@ def extract_contexts_from_ixbrl(
 
         for mem in ctx.xpath(".//xbrldi:typedMember", namespaces=ns):
             dim = (mem.get("dimension") or "").strip()
-            # typed member value can be complex XML; keep inner XML string
             inner = "".join([etree.tostring(ch, encoding="unicode") for ch in mem])
             dims.append({"type": "typed", "dimension": dim, "value_xml": inner})
 
@@ -90,8 +88,5 @@ def extract_contexts_from_ixbrl(
                 dimensions_json=json.dumps(dims, ensure_ascii=False),
             )
         )
-
-    if not out:
-        warnings.append(f"[context] No contexts extracted from: {ixbrl_inner_path}")
 
     return out

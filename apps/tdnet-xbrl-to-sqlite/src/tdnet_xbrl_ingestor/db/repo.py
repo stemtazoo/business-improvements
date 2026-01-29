@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Iterable, Tuple
 
-from tdnet_xbrl_ingestor.models.entities import Fact, Label
 from tdnet_xbrl_ingestor.models.entities import Fact, Label, Context, Unit
+
 
 def get_or_create_filing(
     con: sqlite3.Connection,
@@ -14,15 +14,6 @@ def get_or_create_filing(
     zip_sha256: str,
     on_duplicate: str = "skip",
 ) -> Tuple[int, bool]:
-    """
-    Returns (filing_id, did_skip).
-
-    - If sha256 already exists:
-        - skip: returns existing id and did_skip=True
-        - replace: REUSE the same filing_id, delete child rows (facts/contexts/units),
-                   update filing metadata, and did_skip=False
-    - If sha256 does not exist: create new filing, did_skip=False
-    """
     row = con.execute(
         "SELECT id FROM filings WHERE zip_sha256 = ?",
         (zip_sha256,),
@@ -35,14 +26,10 @@ def get_or_create_filing(
 
         if on_duplicate == "skip":
             return filing_id, True
-
         if on_duplicate != "replace":
             raise ValueError(f"Unknown on_duplicate: {on_duplicate!r}")
 
-        # ✅ replace: keep the same filing_id and clear dependent data
         _clear_filing_children(con, filing_id)
-
-        # update metadata (optional, but useful)
         con.execute(
             """
             UPDATE filings
@@ -52,10 +39,8 @@ def get_or_create_filing(
             """,
             (zip_name, filing_id),
         )
-
         return filing_id, False
 
-    # new filing
     cur = con.execute(
         """
         INSERT INTO filings (zip_name, zip_sha256)
@@ -67,21 +52,10 @@ def get_or_create_filing(
 
 
 def _clear_filing_children(con: sqlite3.Connection, filing_id: int) -> None:
-    """
-    Delete rows that belong to a filing, without deleting the filing itself.
-    This keeps filing_id stable across re-ingests.
-    """
-    # Delete in child->parent order (safe even with FK)
     con.execute("DELETE FROM facts WHERE filing_id = ?", (filing_id,))
-    # If you have contexts/units tables, clear them too:
-    try:
-        con.execute("DELETE FROM contexts WHERE filing_id = ?", (filing_id,))
-    except sqlite3.OperationalError:
-        pass
-    try:
-        con.execute("DELETE FROM units WHERE filing_id = ?", (filing_id,))
-    except sqlite3.OperationalError:
-        pass
+    con.execute("DELETE FROM contexts WHERE filing_id = ?", (filing_id,))
+    con.execute("DELETE FROM units WHERE filing_id = ?", (filing_id,))
+
 
 def upsert_facts(
     con: sqlite3.Connection,
@@ -90,13 +64,6 @@ def upsert_facts(
     *,
     chunk_size: int = 2000,
 ) -> int:
-    """
-    Insert facts with UPSERT. Returns number of rows affected (insert+update).
-
-    Notes:
-    - SQLite's cursor.rowcount with executemany is not always reliable across drivers.
-      We compute affected rows using total_changes delta.
-    """
     facts_list = list(facts)
     if not facts_list:
         return 0
@@ -131,7 +98,6 @@ def upsert_facts(
     """
 
     def to_params(f: Fact) -> dict:
-        # Decimal -> float for SQLite REAL (analysis app can re-parse from value_text if needed)
         value_num = float(f.value_num) if f.value_num is not None else None
         return {
             "filing_id": filing_id,
@@ -151,13 +117,11 @@ def upsert_facts(
         }
 
     before = con.total_changes
-
     params = [to_params(f) for f in facts_list]
     for i in range(0, len(params), chunk_size):
         con.executemany(sql, params[i : i + chunk_size])
+    return con.total_changes - before
 
-    after = con.total_changes
-    return after - before
 
 def upsert_labels(
     con: sqlite3.Connection,
@@ -165,9 +129,6 @@ def upsert_labels(
     *,
     chunk_size: int = 2000,
 ) -> int:
-    """
-    Insert labels with UPSERT. Returns number of rows affected (insert+update).
-    """
     labels_list = list(labels)
     if not labels_list:
         return 0
@@ -187,22 +148,21 @@ def upsert_labels(
     ;
     """
 
-    def to_params(l: Label) -> dict:
-        return {
+    before = con.total_changes
+    params = [
+        {
             "concept_name": l.concept_name,
             "role": l.role,
             "lang": l.lang,
             "label_text": l.label_text,
         }
-
-    before = con.total_changes
-    params = [to_params(l) for l in labels_list]
+        for l in labels_list
+    ]
 
     for i in range(0, len(params), chunk_size):
         con.executemany(sql, params[i : i + chunk_size])
+    return con.total_changes - before
 
-    after = con.total_changes
-    return after - before
 
 def upsert_contexts(con: sqlite3.Connection, filing_id: int, contexts: Iterable[Context], *, chunk_size: int = 2000) -> int:
     ctx_list = list(contexts)
@@ -248,9 +208,11 @@ def upsert_contexts(con: sqlite3.Connection, filing_id: int, contexts: Iterable[
         }
         for c in ctx_list
     ]
+
     for i in range(0, len(params), chunk_size):
         con.executemany(sql, params[i : i + chunk_size])
     return con.total_changes - before
+
 
 def upsert_units(con: sqlite3.Connection, filing_id: int, units: Iterable[Unit], *, chunk_size: int = 2000) -> int:
     unit_list = list(units)
@@ -282,9 +244,13 @@ def upsert_units(con: sqlite3.Connection, filing_id: int, units: Iterable[Unit],
         }
         for u in unit_list
     ]
+
     for i in range(0, len(params), chunk_size):
         con.executemany(sql, params[i : i + chunk_size])
     return con.total_changes - before
+
+
+# --- stats helpers ---
 
 @dataclass(frozen=True, slots=True)
 class DbStats:
@@ -307,6 +273,7 @@ def get_db_stats(con: sqlite3.Connection) -> DbStats:
         units=count("units"),
         labels=count("labels"),
     )
+
 
 @dataclass(frozen=True, slots=True)
 class LatestFiling:
@@ -348,10 +315,6 @@ class FilingStats:
 
 
 def get_stats_by_filing(con: sqlite3.Connection, *, limit: int = 50) -> list[FilingStats]:
-    """
-    Return per-filing counts for facts/contexts/units.
-    labels are global (no filing_id), so excluded here.
-    """
     rows = con.execute(
         """
         SELECT

@@ -18,21 +18,14 @@ def extract_facts_from_ixbrl(
     ixbrl_inner_path: str,
     warnings: list[str] | None = None,
 ) -> List[Fact]:
-    """
-    Extract facts from a single iXBRL XHTML file inside a ZIP.
-
-    - Extracts ix:nonFraction (numeric) and ix:nonNumeric (non-numeric)
-    - Does NOT require external taxonomy resolution
-    - Keeps raw_text and source_file for traceability
-    """
     if warnings is None:
         warnings = []
 
     data = read_bytes(zip_path, ixbrl_inner_path)
 
     parser = etree.XMLParser(
-        recover=True,         # tolerate minor XHTML issues
-        huge_tree=True,       # large files
+        recover=True,
+        huge_tree=True,
         remove_comments=False,
         remove_pis=False,
         ns_clean=True,
@@ -45,27 +38,19 @@ def extract_facts_from_ixbrl(
         warnings.append(f"[ixbrl] XML parse failed: {ixbrl_inner_path}: {e}")
         return []
 
-    # lxml XPath cannot accept an empty namespace prefix (None key)
-    ns = {k: v for k, v in (root.nsmap or {}).items() if k}  # drop None
-    # Ensure ix prefix exists
-    ns["ix"] = "http://www.xbrl.org/2008/inlineXBRL"
-    # Ensure we can address ix namespace even if prefix differs
-    ns.setdefault("ix", IX_NS)
+    # ✅ lxml XPath cannot accept namespaces with None key
+    ns = {k: v for k, v in (root.nsmap or {}).items() if k}
+    ns["ix"] = IX_NS
 
     facts: list[Fact] = []
 
-    # Numeric facts
     for el in root.xpath("//ix:nonFraction", namespaces=ns):
         facts.append(_fact_from_element(el, ixbrl_inner_path, is_numeric=True, warnings=warnings))
 
-    # Non-numeric facts
     for el in root.xpath("//ix:nonNumeric", namespaces=ns):
         facts.append(_fact_from_element(el, ixbrl_inner_path, is_numeric=False, warnings=warnings))
 
-    # Filter out broken ones missing name (rare but possible with recover=True)
-    facts = [f for f in facts if f.name]
-
-    return facts
+    return [f for f in facts if f.name]
 
 
 def _fact_from_element(
@@ -75,10 +60,6 @@ def _fact_from_element(
     is_numeric: bool,
     warnings: list[str],
 ) -> Fact:
-    """
-    Convert a single ix:* element into Fact.
-    """
-    # Attributes (iXBRL)
     name = (el.get("name") or "").strip()
     context_ref = (el.get("contextRef") or "").strip() or None
     unit_ref = (el.get("unitRef") or "").strip() or None
@@ -88,15 +69,9 @@ def _fact_from_element(
     scale = (el.get("scale") or "").strip() or None
     sign = (el.get("sign") or "").strip() or None
 
-    # Locator (best effort)
     locator = (el.get("id") or "").strip() or None
 
-    # raw text: include nested nodes
-    raw_text = "".join(el.itertext())
-    raw_text = raw_text.replace("\u00a0", " ").strip()
-
-    if not name:
-        warnings.append(f"[ixbrl] Missing @name in fact element in {source_file} (id={locator})")
+    raw_text = "".join(el.itertext()).replace("\u00a0", " ").strip()
 
     if is_numeric:
         norm = normalize_numeric(raw_text, sign_attr=sign, scale_attr=scale)

@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import hashlib
+
 
 def sha256_file(path: str, *, chunk_size: int = 1024 * 1024) -> str:
     h = hashlib.sha256()

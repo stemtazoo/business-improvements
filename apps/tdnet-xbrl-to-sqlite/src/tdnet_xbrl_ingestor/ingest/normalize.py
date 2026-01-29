@@ -7,8 +7,6 @@ from typing import Optional
 
 
 _WS_RE = re.compile(r"\s+", re.UNICODE)
-
-# 「数値っぽい部分」を抜く（例: "1,234" / "1,234.56" / "-123"）
 _NUM_RE = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
 
 
@@ -32,50 +30,36 @@ def normalize_numeric(
     sign_attr: str | None = None,
     scale_attr: str | None = None,
 ) -> NormalizedValue:
-    """
-    Normalize iXBRL numeric text into Decimal when possible.
-    Handles:
-      - commas, NBSP
-      - parentheses () / （）
-      - triangle negative markers: △ ▲
-      - @sign='-' attribute
-      - @scale (10^scale)
-    """
+    """Normalize iXBRL numeric text into Decimal when possible."""
+
     raw0 = raw or ""
     s = raw0.replace("\u00a0", " ").strip()
 
+    # ✅ Empty numeric values are common (e.g., "未定"). Treat as missing silently.
     if s == "":
-        return NormalizedValue("", None, True, "Empty numeric fact value.")
+        return NormalizedValue("", None, True, None)
 
     neg = False
 
-    # sign attribute
     if sign_attr and sign_attr.strip() == "-":
         neg = True
 
-    # triangle markers
     if s[:1] in ("△", "▲"):
         neg = True
         s = s[1:].strip()
 
-    # parentheses (ascii / full-width)
     if (s.startswith("(") and s.endswith(")")) or (s.startswith("（") and s.endswith("）")):
         neg = True
         s = s[1:-1].strip()
 
-    # remove commas / spaces
     s = s.replace(",", "")
     s = _WS_RE.sub("", s)
 
-    # some disclosures use "－" etc as placeholder
     if s in ("-", "－", "―", "—"):
-        return NormalizedValue("", None, True, "Placeholder dash numeric value.")
+        return NormalizedValue("", None, True, None)
 
-    # best-effort: if unexpected chars exist, try to extract a clean number
-    # (avoid being too aggressive; we keep warning)
     warning = None
     if not _NUM_RE.match(s):
-        # strip common full-width digits? (rare) -> keep simple; warn and fail parse
         warning = f"Unparseable numeric token: {s!r}"
         return NormalizedValue(value_text=s, value_num=None, is_numeric=True, warning=warning)
 
@@ -90,15 +74,9 @@ def normalize_numeric(
                 if scale != 0:
                     d = d * (Decimal(10) ** Decimal(scale))
             except ValueError:
-                # ignore invalid scale, but warn
                 warning = f"Invalid scale attribute: {scale_attr!r}"
 
         return NormalizedValue(value_text=str(d), value_num=d, is_numeric=True, warning=warning)
 
     except (InvalidOperation, ValueError) as e:
-        return NormalizedValue(
-            value_text=s,
-            value_num=None,
-            is_numeric=True,
-            warning=f"Decimal parse failed: {e}",
-        )
+        return NormalizedValue(value_text=s, value_num=None, is_numeric=True, warning=f"Decimal parse failed: {e}")
