@@ -45,7 +45,10 @@ def extract_facts_from_ixbrl(
         warnings.append(f"[ixbrl] XML parse failed: {ixbrl_inner_path}: {e}")
         return []
 
-    ns = dict(root.nsmap or {})
+    # lxml XPath cannot accept an empty namespace prefix (None key)
+    ns = {k: v for k, v in (root.nsmap or {}).items() if k}  # drop None
+    # Ensure ix prefix exists
+    ns["ix"] = "http://www.xbrl.org/2008/inlineXBRL"
     # Ensure we can address ix namespace even if prefix differs
     ns.setdefault("ix", IX_NS)
 

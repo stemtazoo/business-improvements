@@ -8,6 +8,10 @@ from tdnet_xbrl_ingestor.db.schema import ensure_schema
 from tdnet_xbrl_ingestor.db.repo import (
     get_or_create_filing, upsert_facts, upsert_labels
 )
+from tdnet_xbrl_ingestor.extract.xbrl_contexts import extract_contexts_from_ixbrl
+from tdnet_xbrl_ingestor.extract.xbrl_units import extract_units_from_ixbrl
+from tdnet_xbrl_ingestor.db.repo import upsert_contexts, upsert_units
+
 
 @dataclass
 class IngestResult:
