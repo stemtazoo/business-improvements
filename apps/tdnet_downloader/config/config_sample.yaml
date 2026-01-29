@@ -1,0 +1,11 @@
+tdnet:
+  date_from: "20251230"
+  out_dir: "downloads"
+  tickers:
+    - "7388"
+    - "7203"
+    - "6758"
+
+playwright:
+  headless: false
+  wait_ms: 800
