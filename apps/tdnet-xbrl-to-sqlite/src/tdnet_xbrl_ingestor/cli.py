@@ -15,8 +15,12 @@ def main(argv=None) -> int:
     p.add_argument("--by-filing", action="store_true", help="Show per-filing counts in --stats output.")
     p.add_argument("--limit", type=int, default=20, help="Limit rows for --stats --by-filing (default: 20).")
 
+    # Watch folder mode
+    p.add_argument("--watch", help="Watch a folder and ingest new ZIP files automatically.")
+
     args = p.parse_args(argv)
 
+    # --- stats: pipeline not needed ---
     if args.stats:
         from tdnet_xbrl_ingestor.db.connect import connect
         from tdnet_xbrl_ingestor.db.schema import ensure_schema
@@ -48,10 +52,18 @@ def main(argv=None) -> int:
 
         return 0
 
-    if not args.zip:
-        p.error("--zip is required unless --stats is specified")
+    # --- watch: zip not needed ---
+    if args.watch:
+        from tdnet_xbrl_ingestor.watch.watch_folder import watch_folder
 
-    # ✅ ingestion only: import pipeline lazily
+        watch_folder(args.watch, db_path=args.db, on_duplicate=args.on_duplicate)
+        return 0
+
+    # --- ingestion: zip required ---
+    if not args.zip:
+        p.error("--zip is required unless --stats or --watch is specified")
+
+    # Ingest only: import pipeline lazily
     from tdnet_xbrl_ingestor.ingest.pipeline import run_pipeline
 
     result = run_pipeline(zip_path=args.zip, db_path=args.db, on_duplicate=args.on_duplicate)
